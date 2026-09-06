@@ -11,6 +11,11 @@ const apiUrl = document.querySelector('#apiUrl');
 const fetchButton = document.querySelector('#fetchButton');
 const inputLineNumbers = document.querySelector('#inputLineNumbers');
 const outputLineNumbers = document.querySelector('#outputLineNumbers');
+const workspace = document.querySelector('.workspace');
+const diffPanel = document.querySelector('#diffPanel');
+const diffOutput = document.querySelector('#diffOutput');
+const inputDiffLayer = document.querySelector('#inputDiffLayer');
+const outputDiffLayer = document.querySelector('#outputDiffLayer');
 
 let formattedJson = '';
 
@@ -230,21 +235,249 @@ document.querySelector('#formatButton').addEventListener('click', () => formatJs
 document.querySelector('#minifyButton').addEventListener('click', () => formatJson(true));
 document.querySelector('#stringifyButton').addEventListener('click', stringifyJson);
 document.querySelector('#unstringifyButton').addEventListener('click', unstringifyJson);
+function formatDiffPath(path) {
+  return path || 'root';
+}
+
+function collectDiffs(left, right, path = '') {
+  const differences = [];
+  const leftIsObject = left !== null && typeof left === 'object';
+  const rightIsObject = right !== null && typeof right === 'object';
+  if (!leftIsObject || !rightIsObject || Array.isArray(left) !== Array.isArray(right)) {
+    if (JSON.stringify(left) !== JSON.stringify(right)) differences.push(`~ ${formatDiffPath(path)}: ${JSON.stringify(left)} -> ${JSON.stringify(right)}`);
+    return differences;
+  }
+
+  const keys = [...new Set([...Object.keys(left), ...Object.keys(right)])];
+  keys.forEach((key) => {
+    const nextPath = Array.isArray(left) ? `${path}[${key}]` : path ? `${path}.${key}` : key;
+    if (!(key in left)) differences.push(`+ ${nextPath}: ${JSON.stringify(right[key])}`);
+    else if (!(key in right)) differences.push(`- ${nextPath}: ${JSON.stringify(left[key])}`);
+    else differences.push(...collectDiffs(left[key], right[key], nextPath));
+  });
+  return differences;
+}
+
+function getLineOperations(leftLines, rightLines) {
+  const table = Array.from({ length: leftLines.length + 1 }, () => Array(rightLines.length + 1).fill(0));
+  for (let leftIndex = leftLines.length - 1; leftIndex >= 0; leftIndex -= 1) {
+    for (let rightIndex = rightLines.length - 1; rightIndex >= 0; rightIndex -= 1) {
+      table[leftIndex][rightIndex] = leftLines[leftIndex] === rightLines[rightIndex]
+        ? table[leftIndex + 1][rightIndex + 1] + 1
+        : Math.max(table[leftIndex + 1][rightIndex], table[leftIndex][rightIndex + 1]);
+    }
+  }
+
+  const operations = [];
+  let leftIndex = 0;
+  let rightIndex = 0;
+  while (leftIndex < leftLines.length || rightIndex < rightLines.length) {
+    if (leftIndex < leftLines.length && rightIndex < rightLines.length && leftLines[leftIndex] === rightLines[rightIndex]) {
+      operations.push({ type: 'equal', leftIndex, rightIndex });
+      leftIndex += 1;
+      rightIndex += 1;
+    } else if (rightIndex < rightLines.length && (leftIndex === leftLines.length || table[leftIndex][rightIndex + 1] >= table[leftIndex + 1][rightIndex])) {
+      operations.push({ type: 'add', rightIndex });
+      rightIndex += 1;
+    } else {
+      operations.push({ type: 'remove', leftIndex });
+      leftIndex += 1;
+    }
+  }
+  return operations;
+}
+
+function applyDiffHighlights(leftText, rightText) {
+  const leftLines = leftText.split('\n');
+  const rightLines = rightText.split('\n');
+  const operations = getLineOperations(leftLines, rightLines);
+  const leftStatuses = Array(leftLines.length).fill('');
+  const rightStatuses = Array(rightLines.length).fill('');
+  const removed = operations.filter((operation) => operation.type === 'remove');
+  const added = operations.filter((operation) => operation.type === 'add');
+  const usedAdded = new Set();
+  const getLineKey = (line) => line.match(/^\s*"([^"\n]+)"\s*:/)?.[1] || null;
+
+  removed.forEach((removedOperation) => {
+    const removedKey = getLineKey(leftLines[removedOperation.leftIndex]);
+    const addedIndex = added.findIndex((addedOperation, index) => {
+      if (usedAdded.has(index)) return false;
+      const addedKey = getLineKey(rightLines[addedOperation.rightIndex]);
+      return removedKey !== null && removedKey === addedKey;
+    });
+    if (addedIndex !== -1) {
+      usedAdded.add(addedIndex);
+      leftStatuses[removedOperation.leftIndex] = 'changed';
+      rightStatuses[added[addedIndex].rightIndex] = 'changed';
+    }
+  });
+
+  if (removed.length === 1 && added.length === 1 && !leftStatuses[removed[0].leftIndex]) {
+    leftStatuses[removed[0].leftIndex] = 'changed';
+    rightStatuses[added[0].rightIndex] = 'changed';
+    usedAdded.add(0);
+  }
+
+  removed.forEach((operation) => {
+    if (!leftStatuses[operation.leftIndex]) leftStatuses[operation.leftIndex] = 'removed';
+  });
+  added.forEach((operation, index) => {
+    if (!usedAdded.has(index)) rightStatuses[operation.rightIndex] = 'added';
+  });
+
+  inputDiffLayer.innerHTML = leftStatuses.map((status) => `<div class="diff-line${status ? ` ${status}` : ''}"></div>`).join('');
+  outputDiffLayer.innerHTML = rightStatuses.map((status) => `<div class="diff-line${status ? ` ${status}` : ''}"></div>`).join('');
+}
+
+function clearDiffHighlights() {
+  inputDiffLayer.textContent = '';
+  outputDiffLayer.textContent = '';
+}
+
+function compareJson() {
+  clearDiffHighlights();
+  let left;
+  let right;
+  try {
+    left = JSON.parse(input.value.trim());
+  } catch {
+    diffOutput.textContent = 'Input is not valid JSON.';
+    diffPanel.hidden = false;
+    return;
+  }
+  try {
+    right = JSON.parse(output.value.trim());
+  } catch {
+    diffOutput.textContent = 'Output is not valid JSON.';
+    diffPanel.hidden = false;
+    return;
+  }
+
+  const leftFormatted = JSON.stringify(left, null, getIndent());
+  const rightFormatted = JSON.stringify(right, null, getIndent());
+  input.value = leftFormatted;
+  output.value = rightFormatted;
+  formattedJson = rightFormatted;
+  updateInputMeta();
+  outputMeta.textContent = `${rightFormatted.length.toLocaleString()} characters`;
+  updateLineNumbers(outputLineNumbers, rightFormatted);
+  copyButton.disabled = false;
+  downloadButton.disabled = false;
+  applyDiffHighlights(leftFormatted, rightFormatted);
+  const differences = collectDiffs(left, right);
+  diffOutput.textContent = differences.length ? differences.join('\n') : 'No differences. The JSON documents contain the same data.';
+  diffPanel.hidden = false;
+  setMessage(differences.length ? `${differences.length} difference${differences.length === 1 ? '' : 's'} found` : 'JSON documents match');
+}
+
+document.querySelector('#diffButton').addEventListener('click', compareJson);
+document.querySelector('#closeDiffButton').addEventListener('click', () => { diffPanel.hidden = true; });
 fetchButton.addEventListener('click', fetchJsonFromApi);
 apiUrl.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') fetchJsonFromApi();
 });
 document.querySelector('#clearButton').addEventListener('click', () => { input.value = ''; updateInputMeta(); formatJson(); input.focus(); });
 indentSelect.addEventListener('change', () => { if (formattedJson) formatJson(); });
-input.addEventListener('input', () => { clearErrorHighlight(); updateInputMeta(); });
+input.addEventListener('input', () => { clearErrorHighlight(); clearDiffHighlights(); updateInputMeta(); });
 input.addEventListener('scroll', () => syncLineNumbers(input, inputLineNumbers));
 output.addEventListener('input', () => {
+  clearDiffHighlights();
   formattedJson = output.value;
   outputMeta.textContent = `${output.value.length.toLocaleString()} characters`;
   updateLineNumbers(outputLineNumbers, output.value);
   setMessage('Output edited');
 });
 output.addEventListener('scroll', () => syncLineNumbers(output, outputLineNumbers));
+function setupSearch(pane, editor) {
+  const searchPanel = pane.querySelector('.pane-search');
+  const searchToggle = pane.querySelector('.pane-search-toggle');
+  const searchInput = pane.querySelector('.find-input');
+  const replaceInput = pane.querySelector('.replace-input');
+
+  function findNext() {
+    const query = searchInput.value;
+    if (!query) return;
+    const nextMatch = editor.value.indexOf(query, editor.selectionEnd || 0);
+    const matchStart = nextMatch === -1 ? editor.value.indexOf(query) : nextMatch;
+    if (matchStart === -1) {
+      setMessage('No matches found', true);
+      return;
+    }
+    editor.focus();
+    editor.setSelectionRange(matchStart, matchStart + query.length);
+    setMessage(`Found match in ${editor === input ? 'input' : 'output'}`);
+  }
+
+  function replaceCurrent() {
+    const query = searchInput.value;
+    if (!query) return;
+    if (editor.value.slice(editor.selectionStart, editor.selectionEnd) !== query) {
+      findNext();
+      return;
+    }
+    editor.setRangeText(replaceInput.value, editor.selectionStart, editor.selectionEnd, 'end');
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
+    setMessage('Match replaced');
+  }
+
+  function replaceAll() {
+    const query = searchInput.value;
+    if (!query) return;
+    const matches = editor.value.split(query).length - 1;
+    if (!matches) {
+      setMessage('No matches found', true);
+      return;
+    }
+    editor.value = editor.value.split(query).join(replaceInput.value);
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
+    setMessage(`Replaced ${matches} ${matches === 1 ? 'match' : 'matches'}`);
+  }
+
+  searchToggle.addEventListener('click', () => {
+    searchPanel.hidden = !searchPanel.hidden;
+    searchToggle.setAttribute('aria-expanded', String(!searchPanel.hidden));
+    if (!searchPanel.hidden) searchInput.focus();
+  });
+  pane.querySelector('.find-next').addEventListener('click', findNext);
+  pane.querySelector('.replace-current').addEventListener('click', replaceCurrent);
+  pane.querySelector('.replace-all').addEventListener('click', replaceAll);
+  searchInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') findNext();
+  });
+}
+
+setupSearch(inputPane, input);
+setupSearch(document.querySelector('.output-pane'), output);
+function updateExpandControls() {
+  document.querySelectorAll('.pane-expand').forEach((button) => {
+    const pane = button.closest('.editor-pane');
+    const paneName = pane.classList.contains('input-pane') ? 'input' : 'output';
+    const isExpanded = pane.classList.contains('is-expanded');
+    const label = isExpanded ? `Restore ${paneName} editor` : `Enlarge ${paneName} editor`;
+    button.setAttribute('aria-expanded', String(isExpanded));
+    button.setAttribute('aria-label', label);
+    button.title = label;
+  });
+}
+
+document.querySelectorAll('.pane-expand').forEach((button) => {
+  button.addEventListener('click', () => {
+    const pane = button.closest('.editor-pane');
+    const isExpanded = pane.classList.toggle('is-expanded');
+    workspace.classList.toggle('editor-expanded', isExpanded);
+    document.body.classList.toggle('editor-expanded', isExpanded);
+    updateExpandControls();
+  });
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  const expandedPane = document.querySelector('.editor-pane.is-expanded');
+  if (!expandedPane) return;
+  expandedPane.classList.remove('is-expanded');
+  workspace.classList.remove('editor-expanded');
+  document.body.classList.remove('editor-expanded');
+  updateExpandControls();
+});
 inputPane.addEventListener('dragover', (event) => {
   event.preventDefault();
   inputPane.classList.add('is-dragging');

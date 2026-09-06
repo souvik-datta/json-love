@@ -3,8 +3,43 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Format, validate, minify, and download JSON in your browser.">
-  <title>JSON Atelier | Format JSON beautifully</title>
+  <meta name="description" content="Free online JSON formatter, validator, minifier, and viewer. Format, validate, stringify, unstringify, and download JSON securely in your browser.">
+  <meta name="author" content="Souvik Datta">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="theme-color" content="#f5f6f1">
+  <link rel="canonical" href="https://souvik-datta.github.io/json-love/">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://souvik-datta.github.io/json-love/">
+  <meta property="og:title" content="Free JSON Formatter, Validator & Minifier | JSON Atelier">
+  <meta property="og:description" content="Format, validate, minify, stringify, and download JSON directly in your browser. Your data stays on your device.">
+  <meta property="og:site_name" content="JSON Atelier">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Free JSON Formatter, Validator & Minifier | JSON Atelier">
+  <meta name="twitter:description" content="A private, browser-based tool to format, validate, minify, and work with JSON.">
+  <title>Free JSON Formatter, Validator & Minifier | JSON Atelier</title>
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "JSON Atelier",
+      "url": "https://souvik-datta.github.io/json-love/",
+      "description": "Free online JSON formatter, validator, minifier, and viewer that runs in your browser.",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "featureList": [
+        "Format and validate JSON",
+        "Minify JSON",
+        "Stringify and unstringify JSON",
+        "Download formatted JSON"
+      ]
+    }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -17,16 +52,10 @@
         <span class="brand-mark" aria-hidden="true">{ }</span>
         <span>JSON Atelier</span>
       </a>
-      <div class="topbar-note"><span class="status-dot"></span> Runs locally in your browser</div>
+      <div class="topbar-note"><span class="status-dot"></span> JSON is processed in your browser</div>
     </header>
 
     <main>
-      <section class="intro">
-        <p class="eyebrow">A calmer way to work with data</p>
-        <h1>Make JSON<br><em>make sense.</em></h1>
-        <p class="intro-copy">Paste a payload, tidy it up, and leave with data you can trust. Local data stays in your browser.</p>
-      </section>
-
       <section class="workspace" aria-label="JSON formatting workspace">
         <div class="toolbar">
           <div class="toolbar-group">
@@ -34,6 +63,7 @@
             <button class="tool-button secondary" id="minifyButton" type="button"><span aria-hidden="true">↘</span> Minify</button>
             <button class="tool-button secondary" id="stringifyButton" type="button"><span aria-hidden="true">{}</span> Stringify</button>
             <button class="tool-button secondary" id="unstringifyButton" type="button"><span aria-hidden="true">↗</span> Unstringify</button>
+            <button class="tool-button secondary" id="diffButton" type="button"><span aria-hidden="true">+-</span> Compare</button>
           </div>
           <div class="toolbar-group toolbar-right">
             <label class="indent-control" for="indentSelect">Indent
@@ -57,18 +87,38 @@
 
         <div class="editor-grid">
           <div class="editor-pane input-pane" id="inputPane">
-            <div class="pane-heading"><span>Input</span><span class="pane-meta" id="inputMeta">0 characters</span></div>
+            <div class="pane-heading"><span>Input</span><span class="pane-tools"><span class="pane-meta" id="inputMeta">0 characters</span><button class="pane-search-toggle" type="button" title="Search input" aria-label="Search input" aria-expanded="false" aria-controls="inputSearch">⌕</button><button class="pane-expand" type="button" title="Enlarge input editor" aria-label="Enlarge input editor" aria-expanded="false">⛶</button></span></div>
+            <div class="pane-search" id="inputSearch" hidden>
+              <input class="find-input" type="search" placeholder="Find in input" autocomplete="off" spellcheck="false" aria-label="Find in input">
+              <input class="replace-input" type="text" placeholder="Replace with" autocomplete="off" spellcheck="false" aria-label="Replace in input">
+              <div class="search-actions">
+                <button class="small-button find-next" type="button">Find next</button>
+                <button class="small-button replace-current" type="button">Replace</button>
+                <button class="small-button replace-all" type="button">Replace all</button>
+              </div>
+            </div>
             <div class="drop-hint" id="dropHint">Drop a JSON file here</div>
             <div class="code-area">
+              <div class="diff-layer" id="inputDiffLayer" aria-hidden="true"></div>
               <div class="line-numbers" id="inputLineNumbers" aria-hidden="true">1</div>
               <textarea id="jsonInput" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="Paste your JSON here..." aria-label="JSON input"></textarea>
             </div>
           </div>
           <div class="editor-pane output-pane">
-            <div class="pane-heading"><span>Output</span><span class="pane-meta" id="outputMeta">Waiting</span></div>
+            <div class="pane-heading"><span>Output</span><span class="pane-tools"><span class="pane-meta" id="outputMeta">Waiting</span><button class="pane-search-toggle" type="button" title="Search output" aria-label="Search output" aria-expanded="false" aria-controls="outputSearch">⌕</button><button class="pane-expand" type="button" title="Enlarge output editor" aria-label="Enlarge output editor" aria-expanded="false">⛶</button></span></div>
+            <div class="pane-search" id="outputSearch" hidden>
+              <input class="find-input" type="search" placeholder="Find in output" autocomplete="off" spellcheck="false" aria-label="Find in output">
+              <input class="replace-input" type="text" placeholder="Replace with" autocomplete="off" spellcheck="false" aria-label="Replace in output">
+              <div class="search-actions">
+                <button class="small-button find-next" type="button">Find next</button>
+                <button class="small-button replace-current" type="button">Replace</button>
+                <button class="small-button replace-all" type="button">Replace all</button>
+              </div>
+            </div>
             <div class="code-area">
+              <div class="diff-layer" id="outputDiffLayer" aria-hidden="true"></div>
               <div class="line-numbers" id="outputLineNumbers" aria-hidden="true">1</div>
-              <textarea id="jsonOutput" aria-live="polite" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Editable JSON output">Formatted JSON will appear here.</textarea>
+              <textarea id="jsonOutput" aria-live="polite" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Editable JSON output" placeholder="Formatted JSON will appear here."></textarea>
             </div>
             <div class="output-actions">
               <button class="small-button" id="copyButton" type="button" disabled><span aria-hidden="true">▣</span> Copy</button>
@@ -81,12 +131,29 @@
           <div class="validation-message" id="validationMessage"><span class="message-icon">●</span> Ready for JSON</div>
           <div class="shortcut-hint">Tip: <kbd>Ctrl</kbd> <span>+</span> <kbd>Enter</kbd> to format</div>
         </div>
+        <div class="diff-panel" id="diffPanel" hidden>
+          <div class="diff-heading"><span>JSON differences</span><button class="icon-button" id="closeDiffButton" type="button" title="Close differences" aria-label="Close differences">×</button></div>
+          <pre class="diff-output" id="diffOutput" aria-live="polite"></pre>
+        </div>
+      </section>
+
+      <section class="intro">
+        <p class="eyebrow">Free online JSON tools</p>
+        <h1>JSON formatter<br><em>made simple.</em></h1>
+        <p class="intro-copy">Format, validate, minify, and inspect JSON in your browser. Paste a payload, tidy it up, and leave with data you can trust. Your data stays on this device.</p>
       </section>
 
       <section class="feature-strip" aria-label="Features">
         <div><span class="feature-number">01</span><strong>Private by default</strong><p>Your data stays on this device.</p></div>
         <div><span class="feature-number">02</span><strong>Instant feedback</strong><p>Errors are clear and easy to find.</p></div>
         <div><span class="feature-number">03</span><strong>Ready to share</strong><p>Copy or download in one click.</p></div>
+      </section>
+
+      <section class="seo-copy" aria-labelledby="json-tools-heading">
+        <p class="eyebrow">For developers and data work</p>
+        <h2 id="json-tools-heading">A free JSON formatter, validator, and minifier</h2>
+        <p>JSON Atelier is an online JSON viewer and editor for cleaning up API responses, checking JSON syntax, and preparing data for debugging or sharing. Format JSON with your preferred indentation, minify it for smaller payloads, or convert JSON to and from an escaped string.</p>
+        <p>JSON processing happens in your browser, so the JSON you paste stays on your device. You can also fetch JSON from a CORS-enabled API, edit the result, copy it, or download it as a file.</p>
       </section>
     </main>
 
